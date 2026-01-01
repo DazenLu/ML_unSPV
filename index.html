@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 生態調查局 - React Pro</title>
+    <!-- 載入 React 核心與 Babel -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- 載入 Tailwind CSS 與 Lucide Icons -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap');
+        body { font-family: 'Noto Sans TC', sans-serif; background-color: #0f172a; }
+        .canvas-area { cursor: crosshair; }
+        .dot-transition { transition: all 0.7s cubic-bezier(0.4, 0, 0.2, 1); }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const App = () => {
+            const [studentId, setStudentId] = useState("");
+            const [isLoggedIn, setIsLoggedIn] = useState(false);
+            const [points, setPoints] = useState([]);
+            const [centroids, setCentroids] = useState([]);
+            const [step, setStep] = useState(0);
+            const [isConverged, setIsConverged] = useState(false);
+            const [showSurvey, setShowSurvey] = useState(false);
+            const [surveyData, setSurveyData] = useState({ '外星人': '', '機器人': '', '怪物': '' });
+            const [reflection, setReflection] = useState("");
+            const [isSubmitting, setIsSubmitting] = useState(false);
+            const [status, setStatus] = useState("歡迎來到外星荒原！請標記至少 5 隻怪獸。");
+
+            const GAS_URL = "https://script.google.com/macros/s/AKfycbxELENhRgP-ahKh21xwW4bIcOUjFG059uZqSk4h_1B1ViS91e9eo3smp0AT7OxC6ufgdA/exec";
+            const emojis = ['👽', '🤖', '👾'];
+            const colors = ['#FF6B6B', '#4ECDC4', '#FFD93D'];
+
+            // 核心發送函式 (使用 URLSearchParams 確保 GAS 可讀)
+            const sendToGAS = async (data) => {
+                setIsSubmitting(true);
+                try {
+                    const params = new URLSearchParams();
+                    params.append('studentId', studentId);
+                    
+                    if (data.type === 'survey') {
+                        params.append('type', 'survey');
+                        params.append('step', data.step);
+                        params.append('counts', JSON.stringify(data.counts));
+                    } else {
+                        params.append('type', 'reflection');
+                        params.append('reflection', data.content);
+                    }
+
+                    await fetch(GAS_URL, {
+                        method: "POST",
+                        mode: "no-cors",
+                        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                        body: params.toString()
+                    });
+                    
+                    await new Promise(r => setTimeout(r, 1000));
+                } catch (e) {
+                    console.error("傳送失敗", e);
+                } finally {
+                    setIsSubmitting(false);
+                }
+            };
+
+            const handleCanvasClick = (e) => {
+                if (step > 0) return;
+                const rect = e.currentTarget.getBoundingClientRect();
+                const x = ((e.clientX - rect.left) / rect.width) * 100;
+                const y = ((e.clientY - rect.top) / rect.height) * 100;
+                setPoints([...points, { x, y, cluster: null }]);
+            };
+
+            const startKMeans = () => {
+                if (points.length < 5) return;
+                const initial = Array.from({ length: 3 }, (_, i) => ({
+                    x: Math.random() * 80 + 10,
+                    y: Math.random() * 70 + 15,
+                    id: i
+                }));
+                setCentroids(initial);
+                setStep(1);
+                setStatus("探測器已就緒，點擊執行運算。");
+            };
+
+            const runIteration = () => {
+                let changed = false;
+                const newPoints = points.map(p => {
+                    let minDist = Infinity, clusterId = 0;
+                    centroids.forEach((c, idx) => {
+                        const d = Math.sqrt(Math.pow(p.x - c.x, 2) + Math.pow(p.y - c.y, 2));
+                        if (d < minDist) { minDist = d; clusterId = idx; }
+                    });
+                    if (p.cluster !== clusterId) changed = true;
+                    return { ...p, cluster: clusterId };
+                });
+
+                const newCentroids = centroids.map((c, idx) => {
+                    const clusterPoints = newPoints.filter(p => p.cluster === idx);
+                    if (clusterPoints.length === 0) return c;
+                    const avgX = clusterPoints.reduce((sum, p) => sum + p.x, 0) / clusterPoints.length;
+                    const avgY = clusterPoints.reduce((sum, p) => sum + p.y, 0) / clusterPoints.length;
+                    if (Math.abs(c.x - avgX) > 0.1 || Math.abs(c.y - avgY) > 0.1) changed = true;
+                    return { ...c, x: avgX, y: avgY };
+                });
+
+                setPoints(newPoints);
+                setCentroids(newCentroids);
+                const nextStep = step + 1;
+                setStep(nextStep);
+
+                if (!changed) {
+                    setIsConverged(true);
+                    setStatus("分類已穩定！請提交最終報告。");
+                    setShowSurvey(true);
+                } else {
+                    setStatus(`運算中 (第 ${nextStep-1} 次)...`);
+                    if (nextStep >= 2 && nextStep <= 4) setShowSurvey(true);
+                }
+            };
+
+            if (!isLoggedIn) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center p-4">
+                        <div className="bg-slate-800 p-8 rounded-[2rem] border-2 border-cyan-500/50 w-full max-w-md shadow-2xl">
+                            <h1 className="text-2xl font-black text-white text-center mb-6">AI 生態調查員登錄</h1>
+                            <input 
+                                type="text" 
+                                value={studentId}
+                                onChange={(e) => setStudentId(e.target.value)}
+                                placeholder="請輸入班級座號" 
+                                className="w-full bg-slate-900 border border-slate-700 rounded-xl p-4 text-center text-cyan-400 font-bold text-xl mb-6 outline-none focus:border-cyan-500"
+                            />
+                            <button 
+                                onClick={() => setIsLoggedIn(true)}
+                                disabled={studentId.length < 2}
+                                className="w-full bg-cyan-500 hover:bg-cyan-400 disabled:bg-slate-700 text-white py-4 rounded-xl font-black transition-all"
+                            >
+                                進入實驗室
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="max-w-6xl mx-auto p-4 md:p-8">
+                    <header className="flex justify-between items-center mb-6 bg-slate-800/50 p-6 rounded-3xl border border-slate-700">
+                        <h1 className="text-xl font-black text-white">AI 生態調查局 <span className="text-cyan-400 ml-2 text-sm italic">ID: {studentId}</span></h1>
+                        <button onClick={() => window.location.reload()} className="text-slate-400 hover:text-white">重新開始</button>
+                    </header>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                        <div className="lg:col-span-8 flex flex-col gap-4">
+                            <div className="bg-cyan-900/30 border-l-4 border-cyan-500 p-4 rounded-r-xl text-cyan-50 font-medium">
+                                {status}
+                            </div>
+                            
+                            <div 
+                                className="canvas-area relative bg-slate-900 rounded-[2.5rem] border-2 border-slate-700 min-h-[500px] overflow-hidden shadow-inner"
+                                onClick={handleCanvasClick}
+                            >
+                                {points.map((p, i) => (
+                                    <div key={i} className="dot-transition absolute" style={{ left: `${p.x}%`, top: `${p.y}%`, transform: 'translate(-50%, -50%)', fontSize: '24px' }}>
+                                        {p.cluster !== null ? emojis[p.cluster] : '🔘'}
+                                    </div>
+                                ))}
+                                {centroids.map((c, i) => (
+                                    <div key={i} className="dot-transition absolute z-10" style={{ left: `${c.x}%`, top: `${c.y}%`, transform: 'translate(-50%, -50%)' }}>
+                                        <div className="w-8 h-8 rounded-lg border-4 border-white shadow-lg animate-pulse" style={{ backgroundColor: colors[i] }}></div>
+                                    </div>
+                                ))}
+                                
+                                {!isConverged && (
+                                    <div className="absolute bottom-6 right-6">
+                                        {step === 0 ? (
+                                            <button onClick={startKMeans} disabled={points.length < 5} className="bg-cyan-500 hover:bg-cyan-400 disabled:bg-slate-700 text-white px-8 py-4 rounded-2xl font-black shadow-xl">開始任務</button>
+                                        ) : (
+                                            <button onClick={runIteration} className="bg-emerald-500 hover:bg-emerald-400 text-white px-8 py-4 rounded-2xl font-black shadow-xl">執行運算</button>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="lg:col-span-4 space-y-6">
+                            {showSurvey && (
+                                <div className="bg-slate-800 border-2 border-cyan-500 p-6 rounded-3xl shadow-xl">
+                                    <h2 className="text-lg font-bold text-white mb-4">數據統計 {isConverged ? "(最終)" : `(第 ${step-1} 次)`}</h2>
+                                    <div className="space-y-3">
+                                        {['外星人', '機器人', '怪物'].map((l, i) => (
+                                            <div key={l} className="flex items-center gap-3 bg-slate-900 p-3 rounded-xl border border-slate-700">
+                                                <span className="text-2xl">{emojis[i]}</span>
+                                                <span className="text-sm font-bold flex-1 text-slate-300">{l}</span>
+                                                <input 
+                                                    type="number" 
+                                                    className="w-16 bg-slate-800 border border-slate-600 rounded-lg p-1 text-center text-cyan-400"
+                                                    value={surveyData[l]}
+                                                    onChange={(e) => setSurveyData({...surveyData, [l]: e.target.value})}
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <button 
+                                        disabled={isSubmitting}
+                                        onClick={async () => {
+                                            await sendToGAS({ type: 'survey', step: step-1, counts: surveyData });
+                                            setShowSurvey(false);
+                                            setSurveyData({ '外星人': '', '機器人': '', '怪物': '' });
+                                        }}
+                                        className="w-full mt-6 bg-cyan-500 hover:bg-cyan-400 text-white py-3 rounded-xl font-bold"
+                                    >
+                                        {isSubmitting ? "上傳中..." : "提交數據"}
+                                    </button>
+                                </div>
+                            )}
+
+                            {isConverged && !showSurvey && (
+                                <div className="bg-slate-800 p-6 rounded-3xl border border-amber-500/50 shadow-xl">
+                                    <h3 className="text-amber-400 font-black mb-4">思考心得</h3>
+                                    <textarea 
+                                        className="w-full bg-slate-900 border border-slate-700 rounded-xl p-4 text-sm text-white h-32 mb-4 outline-none focus:border-amber-500"
+                                        placeholder="觀察看看，AI 是怎麼分類的？"
+                                        value={reflection}
+                                        onChange={(e) => setReflection(e.target.value)}
+                                    ></textarea>
+                                    <button 
+                                        disabled={isSubmitting || !reflection}
+                                        onClick={async () => {
+                                            await sendToGAS({ type: 'reflection', content: reflection });
+                                            setStatus("心得已送出，實驗完成！");
+                                        }}
+                                        className="w-full bg-amber-600 hover:bg-amber-500 text-white py-3 rounded-xl font-bold transition-all"
+                                    >
+                                        {isSubmitting ? "提交中..." : "提交心得報告"}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
