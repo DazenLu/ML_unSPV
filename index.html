@@ -8,21 +8,22 @@
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <!-- 載入 Tailwind CSS 與 Lucide Icons -->
+    <!-- 載入 Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap');
         body { font-family: 'Noto Sans TC', sans-serif; background-color: #0f172a; }
         .canvas-area { cursor: crosshair; }
         .dot-transition { transition: all 0.7s cubic-bezier(0.4, 0, 0.2, 1); }
+        .animate-fade-in { animation: fadeIn 0.5s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
 <body>
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+        const { useState, useEffect } = React;
 
         const App = () => {
             const [studentId, setStudentId] = useState("");
@@ -35,13 +36,17 @@
             const [surveyData, setSurveyData] = useState({ '外星人': '', '機器人': '', '怪物': '' });
             const [reflection, setReflection] = useState("");
             const [isSubmitting, setIsSubmitting] = useState(false);
-            const [status, setStatus] = useState("歡迎來到外星荒原！請標記至少 5 隻怪獸。");
+            const [isFinished, setIsFinished] = useState(false); // 心得是否提交
+            const [status, setStatus] = useState("歡迎來到外星荒原！請點擊畫面標記 15~20 隻怪獸。");
+            
+            // 邏輯解密狀態
+            const [logicStep, setLogicStep] = useState(0);
+            const [logicReadFinished, setLogicReadFinished] = useState(false);
 
             const GAS_URL = "https://script.google.com/macros/s/AKfycbxELENhRgP-ahKh21xwW4bIcOUjFG059uZqSk4h_1B1ViS91e9eo3smp0AT7OxC6ufgdA/exec";
             const emojis = ['👽', '🤖', '👾'];
             const colors = ['#FF6B6B', '#4ECDC4', '#FFD93D'];
 
-            // 核心發送函式 (使用 URLSearchParams 確保 GAS 可讀)
             const sendToGAS = async (data) => {
                 setIsSubmitting(true);
                 try {
@@ -64,7 +69,7 @@
                         body: params.toString()
                     });
                     
-                    await new Promise(r => setTimeout(r, 1000));
+                    await new Promise(r => setTimeout(r, 800));
                 } catch (e) {
                     console.error("傳送失敗", e);
                 } finally {
@@ -78,10 +83,14 @@
                 const x = ((e.clientX - rect.left) / rect.width) * 100;
                 const y = ((e.clientY - rect.top) / rect.height) * 100;
                 setPoints([...points, { x, y, cluster: null }]);
+                
+                if (points.length + 1 >= 15) {
+                    setStatus("樣本數足夠！點擊「開始調查任務」啟動 AI 分類。");
+                }
             };
 
             const startKMeans = () => {
-                if (points.length < 5) return;
+                if (points.length < 15) return;
                 const initial = Array.from({ length: 3 }, (_, i) => ({
                     x: Math.random() * 80 + 10,
                     y: Math.random() * 70 + 15,
@@ -89,7 +98,7 @@
                 }));
                 setCentroids(initial);
                 setStep(1);
-                setStatus("探測器已就緒，點擊執行運算。");
+                setStatus("AI 偵測器已部署！點擊按鈕觀察它是如何分類的。");
             };
 
             const runIteration = () => {
@@ -120,10 +129,10 @@
 
                 if (!changed) {
                     setIsConverged(true);
-                    setStatus("分類已穩定！請提交最終報告。");
+                    setStatus("分類穩定！請完成最後一次數據上傳以解鎖 AI 秘密。");
                     setShowSurvey(true);
                 } else {
-                    setStatus(`運算中 (第 ${nextStep-1} 次)...`);
+                    setStatus(`AI 演化中 (第 ${nextStep-1} 次)...`);
                     if (nextStep >= 2 && nextStep <= 4) setShowSurvey(true);
                 }
             };
@@ -132,18 +141,18 @@
                 return (
                     <div className="min-h-screen flex items-center justify-center p-4">
                         <div className="bg-slate-800 p-8 rounded-[2rem] border-2 border-cyan-500/50 w-full max-w-md shadow-2xl">
-                            <h1 className="text-2xl font-black text-white text-center mb-6">AI 生態調查員登錄</h1>
+                            <h1 className="text-2xl font-black text-white text-center mb-6 italic underline decoration-cyan-500">AI 生態調查員登錄</h1>
                             <input 
                                 type="text" 
                                 value={studentId}
                                 onChange={(e) => setStudentId(e.target.value)}
-                                placeholder="請輸入班級座號" 
+                                placeholder="例：90105" 
                                 className="w-full bg-slate-900 border border-slate-700 rounded-xl p-4 text-center text-cyan-400 font-bold text-xl mb-6 outline-none focus:border-cyan-500"
                             />
                             <button 
                                 onClick={() => setIsLoggedIn(true)}
                                 disabled={studentId.length < 2}
-                                className="w-full bg-cyan-500 hover:bg-cyan-400 disabled:bg-slate-700 text-white py-4 rounded-xl font-black transition-all"
+                                className="w-full bg-cyan-500 hover:bg-cyan-400 disabled:bg-slate-700 text-white py-4 rounded-xl font-black transition-all shadow-lg"
                             >
                                 進入實驗室
                             </button>
@@ -155,14 +164,19 @@
             return (
                 <div className="max-w-6xl mx-auto p-4 md:p-8">
                     <header className="flex justify-between items-center mb-6 bg-slate-800/50 p-6 rounded-3xl border border-slate-700">
-                        <h1 className="text-xl font-black text-white">AI 生態調查局 <span className="text-cyan-400 ml-2 text-sm italic">ID: {studentId}</span></h1>
-                        <button onClick={() => window.location.reload()} className="text-slate-400 hover:text-white">重新開始</button>
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-cyan-500 rounded-full flex items-center justify-center">
+                                <span className="text-white text-xs font-black">AI</span>
+                            </div>
+                            <h1 className="text-xl font-black text-white">AI 生態調查局 <span className="text-cyan-400 ml-2 text-sm italic">ID: {studentId}</span></h1>
+                        </div>
+                        <button onClick={() => window.location.reload()} className="text-slate-400 hover:text-white transition-colors">重新開始</button>
                     </header>
 
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                         <div className="lg:col-span-8 flex flex-col gap-4">
                             <div className="bg-cyan-900/30 border-l-4 border-cyan-500 p-4 rounded-r-xl text-cyan-50 font-medium">
-                                {status}
+                                📡 {status}
                             </div>
                             
                             <div 
@@ -176,16 +190,27 @@
                                 ))}
                                 {centroids.map((c, i) => (
                                     <div key={i} className="dot-transition absolute z-10" style={{ left: `${c.x}%`, top: `${c.y}%`, transform: 'translate(-50%, -50%)' }}>
-                                        <div className="w-8 h-8 rounded-lg border-4 border-white shadow-lg animate-pulse" style={{ backgroundColor: colors[i] }}></div>
+                                        <div className="w-10 h-10 rounded-xl border-4 border-white shadow-lg animate-pulse flex items-center justify-center font-black text-[10px] text-white" style={{ backgroundColor: colors[i] }}>HUB</div>
                                     </div>
                                 ))}
                                 
                                 {!isConverged && (
                                     <div className="absolute bottom-6 right-6">
                                         {step === 0 ? (
-                                            <button onClick={startKMeans} disabled={points.length < 5} className="bg-cyan-500 hover:bg-cyan-400 disabled:bg-slate-700 text-white px-8 py-4 rounded-2xl font-black shadow-xl">開始任務</button>
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); startKMeans(); }} 
+                                                disabled={points.length < 15} 
+                                                className="bg-cyan-500 hover:bg-cyan-400 disabled:bg-slate-700 text-white px-8 py-4 rounded-2xl font-black shadow-xl"
+                                            >
+                                                {points.length < 15 ? `還需標記 ${15 - points.length} 隻` : "開始調查任務"}
+                                            </button>
                                         ) : (
-                                            <button onClick={runIteration} className="bg-emerald-500 hover:bg-emerald-400 text-white px-8 py-4 rounded-2xl font-black shadow-xl">執行運算</button>
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); runIteration(); }} 
+                                                className="bg-emerald-500 hover:bg-emerald-400 text-white px-8 py-4 rounded-2xl font-black shadow-xl animate-bounce"
+                                            >
+                                                點我執行 AI 分類
+                                            </button>
                                         )}
                                     </div>
                                 )}
@@ -193,17 +218,19 @@
                         </div>
 
                         <div className="lg:col-span-4 space-y-6">
+                            {/* STEP 1: 數據提交 */}
                             {showSurvey && (
-                                <div className="bg-slate-800 border-2 border-cyan-500 p-6 rounded-3xl shadow-xl">
-                                    <h2 className="text-lg font-bold text-white mb-4">數據統計 {isConverged ? "(最終)" : `(第 ${step-1} 次)`}</h2>
+                                <div className="bg-slate-800 border-2 border-cyan-500 p-6 rounded-3xl shadow-xl animate-fade-in">
+                                    <h2 className="text-lg font-bold text-white mb-2 font-black">傳送調查數據</h2>
+                                    <p className="text-slate-400 text-xs mb-4">第 {step-1} 次分類結果：</p>
                                     <div className="space-y-3">
                                         {['外星人', '機器人', '怪物'].map((l, i) => (
                                             <div key={l} className="flex items-center gap-3 bg-slate-900 p-3 rounded-xl border border-slate-700">
                                                 <span className="text-2xl">{emojis[i]}</span>
-                                                <span className="text-sm font-bold flex-1 text-slate-300">{l}</span>
+                                                <span className="text-sm font-bold flex-1 text-slate-300">{l}群</span>
                                                 <input 
                                                     type="number" 
-                                                    className="w-16 bg-slate-800 border border-slate-600 rounded-lg p-1 text-center text-cyan-400"
+                                                    className="w-16 bg-slate-800 border border-slate-600 rounded-lg p-2 text-center text-cyan-400 font-bold"
                                                     value={surveyData[l]}
                                                     onChange={(e) => setSurveyData({...surveyData, [l]: e.target.value})}
                                                 />
@@ -211,38 +238,106 @@
                                         ))}
                                     </div>
                                     <button 
-                                        disabled={isSubmitting}
+                                        disabled={isSubmitting || !surveyData['外星人']}
                                         onClick={async () => {
                                             await sendToGAS({ type: 'survey', step: step-1, counts: surveyData });
                                             setShowSurvey(false);
                                             setSurveyData({ '外星人': '', '機器人': '', '怪物': '' });
                                         }}
-                                        className="w-full mt-6 bg-cyan-500 hover:bg-cyan-400 text-white py-3 rounded-xl font-bold"
+                                        className="w-full mt-6 bg-cyan-500 hover:bg-cyan-400 text-white py-4 rounded-xl font-bold transition-all"
                                     >
-                                        {isSubmitting ? "上傳中..." : "提交數據"}
+                                        {isSubmitting ? "傳送中..." : "確認上傳數據"}
                                     </button>
                                 </div>
                             )}
 
+                            {/* STEP 2: 邏輯解密 (數據完後自動出現) */}
                             {isConverged && !showSurvey && (
-                                <div className="bg-slate-800 p-6 rounded-3xl border border-amber-500/50 shadow-xl">
-                                    <h3 className="text-amber-400 font-black mb-4">思考心得</h3>
-                                    <textarea 
-                                        className="w-full bg-slate-900 border border-slate-700 rounded-xl p-4 text-sm text-white h-32 mb-4 outline-none focus:border-amber-500"
-                                        placeholder="觀察看看，AI 是怎麼分類的？"
-                                        value={reflection}
-                                        onChange={(e) => setReflection(e.target.value)}
-                                    ></textarea>
-                                    <button 
-                                        disabled={isSubmitting || !reflection}
-                                        onClick={async () => {
-                                            await sendToGAS({ type: 'reflection', content: reflection });
-                                            setStatus("心得已送出，實驗完成！");
-                                        }}
-                                        className="w-full bg-amber-600 hover:bg-amber-500 text-white py-3 rounded-xl font-bold transition-all"
-                                    >
-                                        {isSubmitting ? "提交中..." : "提交心得報告"}
-                                    </button>
+                                <div className="space-y-6">
+                                    <div className="bg-slate-800 p-6 rounded-3xl border-2 border-cyan-500 shadow-2xl animate-fade-in">
+                                        <div className="flex items-center gap-2 mb-4">
+                                            <div className="w-8 h-8 bg-cyan-500 rounded-lg flex items-center justify-center font-black text-white">?</div>
+                                            <h3 className="text-white font-black">AI 到底在想什麼？</h3>
+                                        </div>
+                                        
+                                        {logicStep === 0 && (
+                                            <div className="space-y-4">
+                                                <p className="text-slate-300 text-sm leading-relaxed">
+                                                    你剛剛隨手點出的怪獸，在 AI 眼中只是一組組 <span className="text-cyan-400 font-bold">「位置座標」</span>。它不管怪獸長什麼樣子，只管它們在哪裡。
+                                                </p>
+                                                <button onClick={() => setLogicStep(1)} className="w-full bg-cyan-600 hover:bg-cyan-500 text-white py-3 rounded-xl text-sm font-bold transition-colors">
+                                                    下一步：看它如何「拉幫結派」
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        {logicStep === 1 && (
+                                            <div className="space-y-4 animate-fade-in">
+                                                <h4 className="text-cyan-400 text-sm font-bold">秘密一：離誰近，就跟誰！</h4>
+                                                <p className="text-slate-300 text-sm leading-relaxed">
+                                                    當你按下按鈕，每隻怪獸會去計算自己離哪個「發報站 (HUB)」最近，最近的那個就是它的隊伍。
+                                                </p>
+                                                <button onClick={() => setLogicStep(2)} className="w-full bg-cyan-600 hover:bg-cyan-500 text-white py-3 rounded-xl text-sm font-bold transition-colors">
+                                                    下一步：看它如何「帶隊移動」
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        {logicStep === 2 && (
+                                            <div className="space-y-4 animate-fade-in">
+                                                <h4 className="text-emerald-400 text-sm font-bold">秘密二：發報站會移動！</h4>
+                                                <p className="text-slate-300 text-sm leading-relaxed">
+                                                    發報站會移動到所有隊員的 <span className="text-emerald-400 font-bold">「中心位置」</span>，這樣它才能照顧到每個人。重複這兩個步驟，怪獸們就會被分得清清楚楚！
+                                                </p>
+                                                <button 
+                                                    onClick={() => { setLogicReadFinished(true); setLogicStep(3); }} 
+                                                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl text-sm font-bold"
+                                                >
+                                                    我懂了！開始寫心得報告
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        {logicStep === 3 && (
+                                            <div className="text-center p-2 text-emerald-400 text-xs font-bold">
+                                                解密完成！請到下方完成報告。
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* STEP 3: 心得報告 (看完原理才顯示) */}
+                                    {logicReadFinished && (
+                                        <div className="bg-slate-800 p-6 rounded-3xl border border-amber-500/50 shadow-xl animate-fade-in">
+                                            <h3 className="text-amber-400 font-black mb-4 flex items-center gap-2">
+                                                <span>✍️</span> 調查員最終報告
+                                            </h3>
+                                            {!isFinished ? (
+                                                <>
+                                                    <textarea 
+                                                        className="w-full bg-slate-900 border border-slate-700 rounded-xl p-4 text-sm text-white h-32 mb-4 outline-none focus:border-amber-500"
+                                                        placeholder="根據剛才學到的秘密，請分享：AI 是如何決定誰是外星人、誰是機器人的？"
+                                                        value={reflection}
+                                                        onChange={(e) => setReflection(e.target.value)}
+                                                    ></textarea>
+                                                    <button 
+                                                        disabled={isSubmitting || !reflection}
+                                                        onClick={async () => {
+                                                            await sendToGAS({ type: 'reflection', content: reflection });
+                                                            setIsFinished(true);
+                                                        }}
+                                                        className="w-full bg-amber-600 hover:bg-amber-500 text-white py-4 rounded-xl font-bold transition-all shadow-md"
+                                                    >
+                                                        {isSubmitting ? "正在封存數據..." : "正式提交報告"}
+                                                    </button>
+                                                </>
+                                            ) : (
+                                                <div className="text-center p-6 bg-emerald-900/20 border border-emerald-500/30 rounded-2xl text-emerald-400 font-black">
+                                                    <div className="text-4xl mb-2">🎉</div>
+                                                    調查任務圓滿成功！<br/>數據已儲存至雲端。
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
